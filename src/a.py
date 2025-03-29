@@ -64,7 +64,9 @@ for i in range(line_size):
         dj = -1
     for j in range(sj, ej, dj):
         key = i * line_size + j
-        sorted_city_list.extend(area_dict[key])
+        sorted_city_list.extend(
+            sorted(area_dict[key],
+                   key=lambda city: city.mean()[1], reverse=i % 2 == 1))
 
 groups: list[list[City]] = []
 start_idx = 0

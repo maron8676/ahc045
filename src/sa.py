@@ -303,11 +303,11 @@ sa_count = 0
 # sa_count = exec_sa()
 
 # 幅が大きい都市周辺を占って、道路を更新
-fortune_count = 0
+query_history = set()
 group_index = 0
 city_index = 0
 fortune_index_set = set()
-while fortune_count < Q and group_index < len(groups):
+while len(query_history) < Q and group_index < len(groups):
     group = groups[group_index]
 
     edge = edges[group_index]
@@ -348,8 +348,17 @@ while fortune_count < Q and group_index < len(groups):
                 query_queue.append(city_dict[neighbor])
                 seen_city.add(neighbor)
 
+    query_cities.sort(key=lambda x: x.index)
+    if tuple(map(lambda x: x.index, query_cities)) in query_history:
+        city_index += 1
+        if city_index >= len(group):
+            city_index = 0
+            group_index += 1
+        continue
+
     # print(group_index, city_index, edge, source_city, file=sys.stderr)
     query_result_set = set(query(query_cities))
+    query_history.add(tuple(map(lambda x: x.index, query_cities)))
     # print(query_edges, query_result_set, file=sys.stderr)
     remove_edge = []
     add_edge = []
@@ -372,7 +381,6 @@ while fortune_count < Q and group_index < len(groups):
     if city_index >= len(group):
         city_index = 0
         group_index += 1
-    fortune_count += 1
 
 # output answer
 answer(groups, edges)

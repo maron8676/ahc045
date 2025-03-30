@@ -28,6 +28,9 @@ class City:
     def get_bbox(self) -> BBox:
         return BBox(self.lx, self.rx, self.ly, self.ry)
 
+    def get_width(self):
+        return max(self.rx - self.lx, self.ry - self.ly)
+
 
 class BBox:
     def __init__(self, lx, rx, ly, ry):
@@ -115,6 +118,7 @@ def li():
 
 
 def query(c: list[City]):
+    # print("query", list(map(str, c)), file=sys.stderr)
     print("?", len(c), *list(map(lambda x: x.index, c)), flush=True)
     return [tuple(map(int, input().split())) for _ in range(len(c) - 1)]
 
@@ -158,18 +162,84 @@ def calc_cost(city_list: list[City], edges: list[list[int]]) -> int:
     return cost
 
 
+def exec_sa():
+    sa_count = 0
+    T = 1.0
+    while time.time() - start_time < 1.0:
+        sa_count += 1
+
+        source_index = random.randint(0, len(groups) - 1)
+        source_group = groups[source_index]
+
+        source_bbox = calc_bbox(source_group)
+
+        target_index = random.randint(0, len(groups) - 1)
+        if source_index == target_index:
+            continue
+
+        target_group = groups[target_index]
+        target_bbox = calc_bbox(groups[target_index])
+        if not source_bbox.is_collision(target_bbox):
+            continue
+
+        # intersection = source_bbox.intersection(target_bbox)
+
+        # source_indices = [index for index, city in enumerate(source_group)
+        #                   if city.get_bbox().is_collision(intersection)]
+        # target_indices = [index for index, city in enumerate(target_group)
+        #                   if city.get_bbox().is_collision(intersection)]
+        #
+        # if len(source_indices) == 0 or len(target_indices) == 0:
+        #     continue
+
+        before_source_cost = calc_cost(source_group, edges[source_index])
+        before_target_cost = calc_cost(target_group, edges[target_index])
+        before_cost = before_source_cost + before_target_cost
+
+        # swap
+        s1 = random.choice(list(range(len(source_group))))
+        s2 = random.choice(list(range(len(target_group))))
+
+        temp = source_group.pop(s1)
+        source_group.append(target_group.pop(s2))
+        target_group.append(temp)
+
+        # 最小全域木を再計算して、辺の長さの和を比較する
+        after_source_edges = cons_minimum_tree(source_group)
+        after_target_edges = cons_minimum_tree(target_group)
+        after_source_cost = calc_cost(source_group, after_source_edges)
+        after_target_cost = calc_cost(target_group, after_target_edges)
+        after_cost = after_source_cost + after_target_cost
+
+        # 採用するか判定
+        # if random.random() < math.exp(max(min((before_cost - after_cost) / max(float(T), 0.0001), 1), -20)):
+        if before_cost - after_cost > 0:
+            edges[source_index] = after_source_edges
+            edges[target_index] = after_target_edges
+        else:
+            temp = source_group.pop(len(source_group) - 1)
+            source_group.append(target_group.pop(len(target_group) - 1))
+            target_group.append(temp)
+
+        T -= 0.0001
+    return sa_count
+
+
 N, M, Q, L, W = li()
 G = li()
 city_list = []
+city_dict = dict()
 for i in range(N):
-    city_list.append(City(i, *li()))
+    source_city = City(i, *li())
+    city_list.append(source_city)
+    city_dict[i] = source_city
 
 line_size = 10
 area_dict = defaultdict(list)
-for city in city_list:
-    mean = city.mean()
+for source_city in city_list:
+    mean = source_city.mean()
     key = mean[0] // 1000 * line_size + mean[1] // 1000
-    area_dict[key].append(city)
+    area_dict[key].append(source_city)
 
 sorted_city_list: list[City] = []
 for i in range(line_size):
@@ -214,7 +284,7 @@ def cons_minimum_tree(group: list[City]):
         u = edge_candidate[1]
         v = edge_candidate[2]
         if not uf.same(u, v):
-            edge.append([index_map[u], index_map[v]])
+            edge.append(sorted([index_map[u], index_map[v]]))
             uf.union(u, v)
         if uf.group_count() == 1:
             break
@@ -227,66 +297,82 @@ for group in groups:
     edge = cons_minimum_tree(group)
     edges.append(edge)
 
-# 1秒焼く
 sa_count = 0
-T = 1.0
-while time.time() - start_time < 1.0:
-    sa_count += 1
 
-    source_index = random.randint(0, len(groups) - 1)
-    source_group = groups[source_index]
+# 1秒焼く
+# sa_count = exec_sa()
 
-    source_bbox = calc_bbox(source_group)
+# 幅が大きい都市周辺を占って、道路を更新
+fortune_count = 0
+group_index = 0
+city_index = 0
+fortune_index_set = set()
+while fortune_count < Q and group_index < len(groups):
+    group = groups[group_index]
 
-    target_index = random.randint(0, len(groups) - 1)
-    if source_index == target_index:
+    edge = edges[group_index]
+    edge_dict = defaultdict(list)
+    for e in edge:
+        edge_dict[e[0]].append(e[1])
+        edge_dict[e[1]].append(e[0])
+
+    source_city = group[city_index]
+    if source_city.get_width() < 300 or len(group) <= 2:
+        city_index += 1
+        if city_index >= len(group):
+            city_index = 0
+            group_index += 1
+        continue
+    if source_city.index in fortune_index_set:
+        city_index += 1
+        if city_index >= len(group):
+            city_index = 0
+            group_index += 1
         continue
 
-    target_group = groups[target_index]
-    target_bbox = calc_bbox(groups[target_index])
-    if not source_bbox.is_collision(target_bbox):
-        continue
+    # 正確ではないため占いする
+    query_edges = set()
+    query_cities = [source_city]
+    fortune_index_set.add(source_city.index)
+    fortune_index_set.update(edge_dict[source_city.index])
+    query_queue = [source_city]
+    seen_city = {source_city.index}
+    while len(query_queue) > 0 and len(query_cities) < L:
+        city = query_queue.pop(0)
+        for neighbor in edge_dict[city.index]:
+            if neighbor not in seen_city:
+                query_edges.add(tuple(sorted([city.index, neighbor])))
+                query_cities.append(city_dict[neighbor])
+                if len(query_cities) >= L:
+                    break
+                query_queue.append(city_dict[neighbor])
+                seen_city.add(neighbor)
 
-    # intersection = source_bbox.intersection(target_bbox)
+    # print(group_index, city_index, edge, source_city, file=sys.stderr)
+    query_result_set = set(query(query_cities))
+    # print(query_edges, query_result_set, file=sys.stderr)
+    remove_edge = []
+    add_edge = []
+    for e in query_edges:
+        if e not in query_result_set:
+            remove_edge.append(e)
+    for e in query_result_set:
+        if e not in query_edges:
+            add_edge.append(e)
+    for e in remove_edge:
+        try:
+            edge.remove(list(e))
+        except ValueError as exp:
+            print(edge, e, file=sys.stderr)
+            raise exp
+    for e in add_edge:
+        edge.append(list(e))
 
-    # source_indices = [index for index, city in enumerate(source_group)
-    #                   if city.get_bbox().is_collision(intersection)]
-    # target_indices = [index for index, city in enumerate(target_group)
-    #                   if city.get_bbox().is_collision(intersection)]
-    #
-    # if len(source_indices) == 0 or len(target_indices) == 0:
-    #     continue
-
-    before_source_cost = calc_cost(source_group, edges[source_index])
-    before_target_cost = calc_cost(target_group, edges[target_index])
-    before_cost = before_source_cost + before_target_cost
-
-    # swap
-    s1 = random.choice(list(range(len(source_group))))
-    s2 = random.choice(list(range(len(target_group))))
-
-    temp = source_group.pop(s1)
-    source_group.append(target_group.pop(s2))
-    target_group.append(temp)
-
-    # 最小全域木を再計算して、辺の長さの和を比較する
-    after_source_edges = cons_minimum_tree(source_group)
-    after_target_edges = cons_minimum_tree(target_group)
-    after_source_cost = calc_cost(source_group, after_source_edges)
-    after_target_cost = calc_cost(target_group, after_target_edges)
-    after_cost = after_source_cost + after_target_cost
-
-    # 採用するか判定
-    # if random.random() < math.exp(max(min((before_cost - after_cost) / max(float(T), 0.0001), 1), -20)):
-    if before_cost - after_cost > 0:
-        edges[source_index] = after_source_edges
-        edges[target_index] = after_target_edges
-    else:
-        temp = source_group.pop(len(source_group) - 1)
-        source_group.append(target_group.pop(len(target_group) - 1))
-        target_group.append(temp)
-
-    T -= 0.0001
+    city_index += 1
+    if city_index >= len(group):
+        city_index = 0
+        group_index += 1
+    fortune_count += 1
 
 # output answer
 answer(groups, edges)

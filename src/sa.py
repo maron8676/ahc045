@@ -385,4 +385,4 @@ while len(query_history) < Q and group_index < len(groups):
 # output answer
 answer(groups, edges)
 
-print(sa_count, time.time() - start_time, file=sys.stderr)
+print(len(query_history), time.time() - start_time, file=sys.stderr)

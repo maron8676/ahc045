@@ -22,6 +22,9 @@ class City:
     def __str__(self):
         return f"City[{self.index}, {self.mean()}]"
 
+    def __repr__(self):
+        return str(self.index)
+
     def mean(self):
         return [(self.lx + self.rx) // 2, (self.ly + self.ry) // 2]
 
@@ -162,6 +165,27 @@ def calc_cost(city_list: list[City], edges: list[list[int]]) -> int:
     return cost
 
 
+def cons_minimum_tree(group: list[City]):
+    edge = []
+    edge_candidate_list: list[tuple[float, int, int]] = []
+    for i in range(len(group)):
+        for j in range(i + 1, len(group)):
+            edge_candidate_list.append((calc_dis(group[i], group[j]), i, j))
+    edge_candidate_list.sort(key=lambda x: x[0])
+    index_map = {i: v.index for i, v in enumerate(group)}
+    uf = UnionFind(len(group))
+    for edge_candidate in edge_candidate_list:
+        u = edge_candidate[1]
+        v = edge_candidate[2]
+        if not uf.same(u, v):
+            edge.append(sorted([index_map[u], index_map[v]]))
+            uf.union(u, v)
+        if uf.group_count() == 1:
+            break
+
+    return edge
+
+
 def exec_sa():
     sa_count = 0
     T = 1.0
@@ -270,28 +294,6 @@ for g in G:
 # get edges from queries
 edges = []
 
-
-def cons_minimum_tree(group: list[City]):
-    edge = []
-    edge_candidate_list: list[tuple[float, int, int]] = []
-    for i in range(len(group)):
-        for j in range(i + 1, len(group)):
-            edge_candidate_list.append((calc_dis(group[i], group[j]), i, j))
-    edge_candidate_list.sort(key=lambda x: x[0])
-    index_map = {i: v.index for i, v in enumerate(group)}
-    uf = UnionFind(len(group))
-    for edge_candidate in edge_candidate_list:
-        u = edge_candidate[1]
-        v = edge_candidate[2]
-        if not uf.same(u, v):
-            edge.append(sorted([index_map[u], index_map[v]]))
-            uf.union(u, v)
-        if uf.group_count() == 1:
-            break
-
-    return edge
-
-
 # 位置が正しいと仮定して解析的に辺を作成する
 for group in groups:
     edge = cons_minimum_tree(group)
@@ -301,6 +303,9 @@ sa_count = 0
 
 # 1秒焼く
 # sa_count = exec_sa()
+
+for group in groups:
+    print(group, file=sys.stderr)
 
 # 幅が大きい都市周辺を占って、道路を更新
 query_history = set()

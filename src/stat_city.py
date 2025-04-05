@@ -258,11 +258,19 @@ for i in range(N):
     city_list.append(source_city)
     city_dict[i] = source_city
 
-line_size = 10
+true_city_list = []
+true_city_dict = dict()
+for i in range(N):
+    x, y = li()
+    source_city = City(i, x, x, y, y)
+    true_city_list.append(source_city)
+    true_city_dict[i] = source_city
+
+line_size = 20
 area_dict = defaultdict(list)
 for source_city in city_list:
     mean = source_city.mean()
-    key = mean[0] // (10000 // line_size) * line_size + mean[1] // (10000 // line_size)
+    key = mean[0] // 1000 * line_size + mean[1] // 1000
     area_dict[key].append(source_city)
 
 sorted_city_list: list[City] = []
@@ -299,95 +307,29 @@ for group in groups:
     edge = cons_minimum_tree(group)
     edges.append(edge)
 
-sa_count = 0
-
-# 1秒焼く
-# sa_count = exec_sa()
-
-# for group in groups:
-#     print(group, file=sys.stderr)
-
-# 幅が大きい都市周辺を占って、道路を更新
-query_history = set()
-group_index = 0
-city_index = 0
-fortune_index_set = set()
-while len(query_history) < Q and group_index < len(groups):
-    group = groups[group_index]
-
-    edge = edges[group_index]
-    edge_dict = defaultdict(list)
-    for e in edge:
-        edge_dict[e[0]].append(e[1])
-        edge_dict[e[1]].append(e[0])
-
-    source_city = group[city_index]
-    if (source_city.get_width() < W // 2) and len(edge_dict[source_city.index]) < 3 or len(group) <= 2:
-        city_index += 1
-        if city_index >= len(group):
-            city_index = 0
-            group_index += 1
-        continue
-    if source_city.index in fortune_index_set:
-        city_index += 1
-        if city_index >= len(group):
-            city_index = 0
-            group_index += 1
-        continue
-
-    # 正確ではないため占いする
-    query_edges = set()
-    query_cities = [source_city]
-    fortune_index_set.add(source_city.index)
-    # fortune_index_set.update(edge_dict[source_city.index])
-    query_queue = [source_city]
-    seen_city = {source_city.index}
-    while len(query_queue) > 0 and len(query_cities) < L:
-        city = query_queue.pop(0)
-        for neighbor in edge_dict[city.index]:
-            if neighbor not in seen_city:
-                query_edges.add(tuple(sorted([city.index, neighbor])))
-                query_cities.append(city_dict[neighbor])
-                if len(query_cities) >= L:
-                    break
-                query_queue.append(city_dict[neighbor])
-                seen_city.add(neighbor)
-
-    query_cities.sort(key=lambda x: x.index)
-    if tuple(map(lambda x: x.index, query_cities)) in query_history:
-        city_index += 1
-        if city_index >= len(group):
-            city_index = 0
-            group_index += 1
-        continue
-
-    # print(group_index, city_index, edge, source_city, file=sys.stderr)
-    query_result_set = set(query(query_cities))
-    query_history.add(tuple(map(lambda x: x.index, query_cities)))
-    # print(query_edges, query_result_set, file=sys.stderr)
-    remove_edge = []
-    add_edge = []
-    for e in query_edges:
-        if e not in query_result_set:
-            remove_edge.append(e)
-    for e in query_result_set:
-        if e not in query_edges:
-            add_edge.append(e)
-    for e in remove_edge:
-        try:
-            edge.remove(list(e))
-        except ValueError as exp:
-            print(edge, e, file=sys.stderr)
-            raise exp
-    for e in add_edge:
-        edge.append(list(e))
-
-    city_index += 1
-    if city_index >= len(group):
-        city_index = 0
-        group_index += 1
-
-# output answer
 answer(groups, edges)
 
-print(len(query_history), time.time() - start_time, file=sys.stderr)
+dis_table = []
+for i in range(N):
+    dis = []
+    for j in range(N):
+        c1 = city_list[i]
+        c2 = city_list[j]
+        dis.append((calc_dis(c1, c2), j))
+    dis.sort(key=lambda x: x[0])
+    dis_table.append(dis)
+
+true_dis_table = []
+for i in range(N):
+    dis = []
+    for j in range(N):
+        c1 = true_city_list[i]
+        c2 = true_city_list[j]
+        dis.append((calc_dis(c1, c2), j))
+    dis.sort(key=lambda x: x[0])
+    true_dis_table.append(dis)
+
+for i in range(N):
+    print(i, true_city_list[i].mean(), file=sys.stderr)
+    print(dis_table[i][1:11], file=sys.stderr)
+    print(true_dis_table[i][1:11], file=sys.stderr)

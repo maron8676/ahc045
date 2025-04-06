@@ -4,7 +4,7 @@ import math
 import random
 import sys
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from sys import stdin
 
 readline = stdin.readline
@@ -132,6 +132,25 @@ def answer(groups, edges):
         print(*list(map(lambda x: x.index, groups[i])))
         for e in edges[i]:
             print(*e)
+
+
+def bfs(start_v, edge_dict, N):
+    stack = deque([(start_v, 0)])
+    stacked = {start_v}
+    dis_dict = dict()
+
+    while len(stack) > 0:
+        v = stack.popleft()
+
+        # vに対する処理
+        dis_dict[v[0]] = v[1]
+
+        if v[0] in edge_dict:
+            for next_v in edge_dict[v[0]]:
+                if next_v not in stacked:
+                    stack.append((next_v, v[1] + 1))
+                    stacked.add(next_v)
+    return dis_dict
 
 
 def calc_dis(city1: City, city2: City) -> int:
@@ -402,7 +421,7 @@ while len(query_history) < Q and L >= 4 and group_index >= 0:
         break
 
     group2 = groups[group_index - 1]
-    if len(group1) != 2 or len(group2) != 2:
+    if len(group1) + len(group2) > L:
         break
 
     query_cities = []
@@ -412,26 +431,95 @@ while len(query_history) < Q and L >= 4 and group_index >= 0:
     query_result_set = query(query_cities)
     query_history[tuple(map(lambda x: x.index, query_cities))] = query_result_set
 
-    # 次数１を見つけて、その次で区切る
+    # len(group1)とlen(group2)に分割
     query_result_dict = defaultdict(list)
     for e in query_result_set:
         query_result_dict[e[0]].append(e[1])
         query_result_dict[e[1]].append(e[0])
-    start = None
-    for key in query_result_dict:
-        if len(query_result_dict[key]) == 1:
-            start = key
-            break
-    next_city = query_result_dict[start][0]
-    groups[group_index] = [city_list[start], city_list[next_city]]
-    edges[group_index] = sorted([[start, next_city]])
 
+    # 直径を見つけて、そこから少しずつ伸ばす
+    start = query_cities[0].index
+    dis_dict = bfs(start, query_result_dict, len(query_cities))
+
+    farthest = None
+    dis_max = 0
+    for key, value in dis_dict.items():
+        if value > dis_max:
+            farthest = key
+            dis_max = value
+    # print(start, farthest, dis_dict, file=sys.stderr)
+
+    start = farthest
+    dis_dict = bfs(start, query_result_dict, len(query_cities))
+    farthest = None
+    dis_max = 0
+    for key, value in dis_dict.items():
+        if value > dis_max:
+            farthest = key
+            dis_max = value
+    # print(start, farthest, dis_dict, file=sys.stderr)
+
+    new_group1 = []
+    stack1 = deque([start])
     new_group2 = []
-    for city in query_cities:
-        if city.index not in {start, next_city}:
-            new_group2.append(city)
+    stack2 = deque([farthest])
+    seen1 = set()
+    seen2 = set()
+    while len(new_group1) < len(groups[group_index]) or len(new_group2) < len(groups[group_index - 1]):
+        # print(len(groups[group_index]), new_group1, len(groups[group_index - 1]), new_group2, stack1, stack2,
+        #       file=sys.stderr)
+        if len(stack1) > 0 and len(new_group1) < len(groups[group_index]):
+            c = stack1.popleft()
+            if c not in seen1 and c not in seen2:
+                new_group1.append(city_list[c])
+                seen1.add(c)
+            for c2 in query_result_dict[c]:
+                if c2 not in seen1:
+                    stack1.append(c2)
+        if len(stack2) > 0 and len(new_group2) < len(groups[group_index - 1]):
+            c = stack2.popleft()
+            if c not in seen1 and c not in seen2:
+                new_group2.append(city_list[c])
+                seen2.add(c)
+            for c2 in query_result_dict[c]:
+                if c2 not in seen2:
+                    stack2.append(c2)
+        # print(new_group1, new_group2, stack1, stack2, file=sys.stderr)
+
+    new_group1_set = set(map(lambda x: x.index, new_group1))
+    new_group1_dict = {new_group1[i].index: i for i in range(len(new_group1))}
+    new_edge1 = []
+    for e in query_result_set:
+        if e[0] in new_group1_set and e[1] in new_group1_set:
+            new_edge1.append(e)
+    new_group1_uf = UnionFind(len(new_group1))
+    for e in new_edge1:
+        new_group1_uf.union(new_group1_dict[e[0]], new_group1_dict[e[1]])
+    for i, c in enumerate(new_group1):
+        if not new_group1_uf.same(new_group1_dict[new_group1[0].index], new_group1_dict[c.index]):
+            new_edge1.append(tuple(sorted([c.index, new_group1[i - 1].index])))
+            new_group1_uf.union(new_group1_dict[c.index], new_group1_dict[new_group1[i - 1].index])
+    # print(len(groups[group_index]), new_group1, new_edge1, query_result_set, file=sys.stderr)
+    groups[group_index] = new_group1
+    edges[group_index] = new_edge1
+
+    new_group2_set = set(map(lambda x: x.index, new_group2))
+    new_group2_dict = {new_group2[i].index: i for i in range(len(new_group2))}
+    new_edge2 = []
+    stack_edge = None
+    for e in query_result_set:
+        if e[0] in new_group2_set and e[1] in new_group2_set:
+            new_edge2.append(e)
+    new_group2_uf = UnionFind(len(new_group2))
+    for e in new_edge2:
+        new_group2_uf.union(new_group2_dict[e[0]], new_group2_dict[e[1]])
+    for i, c in enumerate(new_group2):
+        if not new_group2_uf.same(new_group2_dict[new_group2[0].index], new_group2_dict[c.index]):
+            new_edge2.append(tuple(sorted([c.index, new_group2[i - 1].index])))
+            new_group2_uf.union(new_group2_dict[c.index], new_group2_dict[new_group2[i - 1].index])
+    # print(len(groups[group_index - 1]), new_group2, new_edge2, query_result_set, file=sys.stderr)
     groups[group_index - 1] = new_group2
-    edges[group_index - 1] = sorted([[new_group2[0].index, new_group2[1].index]])
+    edges[group_index - 1] = new_edge2
 
     group_index -= 2
 
@@ -451,3 +539,6 @@ for g in G:
 answer(answer_groups, answer_edges)
 
 print(len(query_history), modify_num, time.time() - start_time, file=sys.stderr)
+# print(G, file=sys.stderr)
+# print(list(map(lambda x: len(x), answer_groups)), file=sys.stderr)
+# print(list(map(lambda x: len(x), answer_edges)), file=sys.stderr)

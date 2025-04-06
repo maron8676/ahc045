@@ -140,6 +140,27 @@ def calc_dis(city1: City, city2: City) -> int:
     return math.floor(math.sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2))
 
 
+def calc_dis_range(city1: City, city2: City) -> list[int]:
+    if city1.get_bbox().is_collision(city2.get_bbox()):
+        min_dis = 1
+    elif max(city1.lx, city2.lx) <= min(city1.rx, city2.rx):
+        min_dis = min(abs(city1.ry - city2.ly), abs(city1.ly - city2.ry))
+    elif max(city1.ly, city2.ly) <= min(city1.ry, city2.ry):
+        min_dis = min(abs(city1.rx - city2.lx), abs(city1.lx - city2.rx))
+    else:
+        min_dis = min(abs(city1.rx - city2.lx) + abs(city1.ry - city2.ly),
+                      abs(city2.rx - city1.lx) + abs(city2.ry - city1.ly),
+                      abs(city1.rx - city2.lx) + abs(city1.ly - city2.ry),
+                      abs(city2.rx - city1.lx) + abs(city2.ly - city1.ry))
+
+    max_dis = max(abs(city1.rx - city2.lx) + abs(city1.ry - city2.ly),
+                  abs(city2.rx - city1.lx) + abs(city2.ry - city1.ly),
+                  abs(city1.rx - city2.lx) + abs(city1.ly - city2.ry),
+                  abs(city2.rx - city1.lx) + abs(city2.ly - city1.ry))
+
+    return [min_dis, max_dis, calc_dis(city1, city2)]
+
+
 def calc_bbox(group: list[City]):
     assert len(group) > 0, "bbox error: empty city list"
     result = group[0].get_bbox()
@@ -170,7 +191,11 @@ def cons_minimum_tree(group: list[City]):
     edge_candidate_list: list[tuple[float, int, int]] = []
     for i in range(len(group)):
         for j in range(i + 1, len(group)):
-            edge_candidate_list.append((calc_dis(group[i], group[j]), i, j))
+            if (group[i].index, group[j].index) in dis_range_dict:
+                edge_candidate_list.append((dis_range_dict[(group[i].index, group[j].index)][2], i, j))
+                assert dis_range_dict[(group[i].index, group[j].index)][2] == calc_dis(group[i], group[j]), "wrong dis"
+            else:
+                edge_candidate_list.append((calc_dis(group[i], group[j]), i, j))
     edge_candidate_list.sort(key=lambda x: x[0])
     index_map = {i: v.index for i, v in enumerate(group)}
     uf = UnionFind(len(group))
@@ -292,9 +317,23 @@ for g in sorted_G:
     groups.append(sorted_city_list[start_idx: start_idx + g])
     start_idx += g
 
+dis_range_dict = dict()
+dis_range_list = []
+for i in range(N):
+    for j in range(i + 1, N):
+        city_i = city_list[i]
+        city_j = city_list[j]
+        dis_range = calc_dis_range(city_i, city_j)
+        if dis_range[0] < 2000:
+            dis_range_dict[(i, j)] = dis_range
+            dis_range_list.append(dis_range)
+
+min_max_dis = {i: math.floor(10000 * math.sqrt(2)) for i in range(N)}
+items = list(dis_range_dict.items())
+items.sort(key=lambda x: x[1][1])
+
 # get edges from queries
 edges = []
-
 # 位置が正しいと仮定して解析的に辺を作成する
 for group in groups:
     edge = cons_minimum_tree(group)
@@ -309,7 +348,7 @@ sa_count = 0
 #     print(group, file=sys.stderr)
 
 # 幅が大きい都市周辺を占って、道路を更新
-query_history = dict()
+query_history = set()
 group_index = 0
 city_index = 0
 fortune_index_set = set()
@@ -365,7 +404,7 @@ while len(query_history) < Q and group_index < len(groups):
 
     # print(group_index, city_index, edge, source_city, file=sys.stderr)
     query_result_set = set(query(query_cities))
-    query_history[tuple(map(lambda x: x.index, query_cities))] = query_result_set
+    query_history.add(tuple(map(lambda x: x.index, query_cities)))
     # print(query_edges, query_result_set, file=sys.stderr)
     remove_edge = []
     add_edge = []
@@ -385,55 +424,49 @@ while len(query_history) < Q and group_index < len(groups):
     for e in add_edge:
         edge.append(list(e))
 
+    # dis_rankを更新する
+    query_cities_dict = dict()
+    for i, city in enumerate(query_cities):
+        query_cities_dict[city.index] = i
+    query_result_list = list(query_result_set)
+    for e in query_result_list:
+        uf = UnionFind(len(query_cities))
+        for e2 in query_result_list:
+            if e == e2:
+                continue
+            uf.union(query_cities_dict[e2[0]], query_cities_dict[e2[1]])
+
+        uf_groups = uf.all_group_members()
+        index1 = query_cities_dict[e[0]]
+        group1 = uf_groups[uf.find(index1)]
+
+        index2 = query_cities_dict[e[1]]
+        group2 = uf_groups[uf.find(index2)]
+        if e == (213, 479):
+            print(uf_groups, uf.find(index1), uf.find(index2), file=sys.stderr)
+
+        if e not in dis_range_dict:
+            continue
+        dis_range = dis_range_dict[e]
+        max_dis = 20000
+        for city in group2:
+            key = tuple(sorted([e[0], query_cities[city].index]))
+            if key not in dis_range_dict:
+                continue
+            max_dis = min(max_dis, dis_range_dict[key][1])
+            dis_range_dict[key][0] = max(dis_range[0] + 1, dis_range_dict[key][0])
+        for city in group1:
+            key = tuple(sorted([e[1], query_cities[city].index]))
+            if key not in dis_range_dict:
+                continue
+            max_dis = min(max_dis, dis_range_dict[key][1])
+            dis_range_dict[key][0] = max(dis_range[0] + 1, dis_range_dict[key][0])
+        dis_range[1] = min(dis_range[1], max_dis)
+
     city_index += 1
     if city_index >= len(group):
         city_index = 0
         group_index += 1
-
-# 小さいグループを複数合わせて見られそうなら見る
-group_index = len(groups) - 1
-while len(query_history) < Q and L >= 4 and group_index >= 0:
-    group1 = groups[group_index]
-    if len(group1) == 1:
-        group_index -= 1
-        continue
-
-    if group_index == 0:
-        break
-
-    group2 = groups[group_index - 1]
-    if len(group1) != 2 or len(group2) != 2:
-        break
-
-    query_cities = []
-    query_cities.extend(group1)
-    query_cities.extend(group2)
-
-    query_result_set = query(query_cities)
-    query_history[tuple(map(lambda x: x.index, query_cities))] = query_result_set
-
-    # 次数１を見つけて、その次で区切る
-    query_result_dict = defaultdict(list)
-    for e in query_result_set:
-        query_result_dict[e[0]].append(e[1])
-        query_result_dict[e[1]].append(e[0])
-    start = None
-    for key in query_result_dict:
-        if len(query_result_dict[key]) == 1:
-            start = key
-            break
-    next_city = query_result_dict[start][0]
-    groups[group_index] = [city_list[start], city_list[next_city]]
-    edges[group_index] = sorted([[start, next_city]])
-
-    new_group2 = []
-    for city in query_cities:
-        if city.index not in {start, next_city}:
-            new_group2.append(city)
-    groups[group_index - 1] = new_group2
-    edges[group_index - 1] = sorted([[new_group2[0].index, new_group2[1].index]])
-
-    group_index -= 2
 
 # output answer
 # group sort
@@ -451,3 +484,16 @@ for g in G:
 answer(answer_groups, answer_edges)
 
 print(len(query_history), modify_num, time.time() - start_time, file=sys.stderr)
+print(items[:10], file=sys.stderr)
+print(len(dis_range_dict), file=sys.stderr)
+
+for edge in edges:
+    if len(edge) == 0:
+        continue
+    for e in edge:
+        if tuple(e) in dis_range_dict:
+            print(e, dis_range_dict[tuple(e)], city_list[e[0]].mean(), city_list[e[1]].mean(), file=sys.stderr)
+        else:
+            print(e, calc_dis_range(city_list[e[0]], city_list[e[1]]), city_list[e[0]].mean(), city_list[e[1]].mean(),
+                  file=sys.stderr)
+    print(file=sys.stderr)

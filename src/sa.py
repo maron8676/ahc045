@@ -286,8 +286,9 @@ for i in range(line_size):
                    key=lambda city: city.mean()[1], reverse=reverse))
 
 groups: list[list[City]] = []
+sorted_G = sorted(G, reverse=True)
 start_idx = 0
-for g in G:
+for g in sorted_G:
     groups.append(sorted_city_list[start_idx: start_idx + g])
     start_idx += g
 
@@ -312,6 +313,7 @@ query_history = set()
 group_index = 0
 city_index = 0
 fortune_index_set = set()
+modify_num = 0
 while len(query_history) < Q and group_index < len(groups):
     group = groups[group_index]
 
@@ -376,6 +378,7 @@ while len(query_history) < Q and group_index < len(groups):
     for e in remove_edge:
         try:
             edge.remove(list(e))
+            modify_num += 1
         except ValueError as exp:
             print(edge, e, file=sys.stderr)
             raise exp
@@ -388,6 +391,18 @@ while len(query_history) < Q and group_index < len(groups):
         group_index += 1
 
 # output answer
-answer(groups, edges)
+# group sort
+group_dict = defaultdict(list)
+for i, group in enumerate(groups):
+    group_dict[len(group)].append(i)
 
-print(len(query_history), time.time() - start_time, file=sys.stderr)
+answer_groups = []
+answer_edges = []
+for g in G:
+    index = group_dict[g].pop()
+    answer_groups.append(groups[index])
+    answer_edges.append(edges[index])
+
+answer(answer_groups, answer_edges)
+
+print(len(query_history), modify_num, time.time() - start_time, file=sys.stderr)
